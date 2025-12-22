@@ -40,6 +40,3 @@ plt.tight_layout()
 plt.savefig("analise_preliminar_lucro.png")
 print("\nGráfico gerado: 'analise_preliminar_lucro.png'")
 print("NOTA: Este gráfico mostra LUCRO BRUTO, não Hypervolume.")
-```
-
-```bash
