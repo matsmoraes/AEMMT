@@ -54,7 +54,7 @@ def main():
         ax.set_title(f"Convergência: Método {metodo}", fontsize=14, fontweight='bold')
         ax.set_xlabel("Gerações", fontsize=12)
         ax.set_ylabel("Melhor Lucro (Média 30 Runs)", fontsize=12)
-        ax.legend(title="Itens")
+        ax.legend(title="Itens", loc='upper left', framealpha=0.9)
         ax.grid(True, linestyle='--', alpha=0.6)
 
     plt.tight_layout()
