@@ -106,7 +106,7 @@ width = 0.35
 fig, ax = plt.subplots(figsize=(14, 7))
 
 
-rects1 = ax.bar(plot_pos - width/2, ammt_vals, width, label='AMMT (Seu Código)', color='#4CAF50', edgecolor='black')
+rects1 = ax.bar(plot_pos - width/2, ammt_vals, width, label='AMMT', color='#4CAF50', edgecolor='black')
 rects2 = ax.bar(plot_pos + width/2, paper_vals, width, label='NSGA-III (Artigo)', color='#2196F3', edgecolor='black')
 
 ax.set_ylabel('Hypervolume (Normalizado)')
