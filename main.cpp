@@ -7,6 +7,9 @@
 #include <iomanip>
 #include <cmath>
 #include <string>
+#include <chrono> // Importante para semente aleatória real
+
+using namespace std;
 
 // ============================================================================
 // CONFIGURAÇÕES GLOBAIS
@@ -23,14 +26,14 @@ const double CAPACITY_RATIO = 0.5; // Mochila aguenta 50% do peso total
 struct Item {
     int id;
     double weight;
-    std::vector<double> profits; // Lucro para obj 1, 2, 3...
-    std::vector<double> ratios;  // Lucro/Peso para cada objetivo (usado no Repair)
+    vector<double> profits; // Lucro para obj 1, 2, 3...
+    vector<double> ratios;  // Lucro/Peso para cada objetivo (usado no Repair)
 };
 
 // Representa um Indivíduo (Solução)
 struct Individual {
-    std::vector<bool> chromosome; // Vetor binário (true = pegou item)
-    std::vector<double> fitness;  // Fitness para cada objetivo
+    vector<bool> chromosome; // Vetor binário (true = pegou item)
+    vector<double> fitness;  // Fitness para cada objetivo
     double total_weight;
     bool valid;
 
@@ -46,7 +49,7 @@ struct Individual {
 };
 
 // ============================================================================
-// CLASSE DO SOLUCIONADOR 
+// CLASSE DO SOLUCIONADOR
 // ============================================================================
 class AMMTSolver {
 private:
@@ -57,11 +60,11 @@ private:
     double elitism_rate;
     double max_capacity;
 
-    std::vector<Item> items;
-    std::vector<Individual> population;
+    vector<Item> items;
+    vector<Individual> population;
     
     // Gerador de números aleatórios moderno (Mersenne Twister)
-    std::mt19937 rng;
+    mt19937 rng;
 
 public:
     // Construtor: Configura o problema
@@ -69,13 +72,15 @@ public:
         : num_items(items_n), selection_method(sel_method), 
           mutation_rate(mut_rate), elitism_rate(elit_rate) {
         
-        // Inicializa semente aleatória baseada no relógio
-        std::random_device rd;
-        rng.seed(rd());
+        // Inicializa semente aleatória baseada no relógio do sistema
+        // Isso garante que cada execução seja diferente
+        unsigned seed = chrono::system_clock::now().time_since_epoch().count();
+        rng.seed(seed);
 
-        // Tamanho da população fixo (um a mais do artigo)
-        pop_size = 32; 
+        // Tamanho da população fixo (igual ao artigo)
+        pop_size = 92; 
         
+        // Gera os dados do problema assim que a classe é criada
         generate_instance();
     }
 
@@ -88,12 +93,12 @@ public:
             Item it;
             it.id = i;
             // Peso aleatório entre 10 e 100 (conforme artigo ZT1999)
-            it.weight = std::uniform_real_distribution<>(10.0, 100.0)(rng);
+            it.weight = uniform_real_distribution<>(10.0, 100.0)(rng);
             total_weight_all += it.weight;
 
             // Lucros aleatórios para os 3 objetivos
             for (int o = 0; o < NUM_OBJECTIVES; ++o) {
-                double profit = std::uniform_real_distribution<>(10.0, 100.0)(rng);
+                double profit = uniform_real_distribution<>(10.0, 100.0)(rng);
                 it.profits.push_back(profit);
                 // Pré-calcula razão (Lucro/Peso) para o Greedy Repair
                 it.ratios.push_back(profit / it.weight);
@@ -107,7 +112,7 @@ public:
     // 2. Avalia e Repara (Greedy Repair) - O CORAÇÃO DO ALGORITMO
     void evaluate_and_repair(Individual& ind) {
         ind.total_weight = 0;
-        std::fill(ind.fitness.begin(), ind.fitness.end(), 0.0);
+        fill(ind.fitness.begin(), ind.fitness.end(), 0.0);
 
         // Calcula peso e fitness inicial
         for (int i = 0; i < num_items; ++i) {
@@ -122,14 +127,14 @@ public:
         // Se excedeu a capacidade, remove itens ruins
         if (ind.total_weight > max_capacity) {
             // Lista índices dos itens que estão na mochila
-            std::vector<int> items_in_bag;
+            vector<int> items_in_bag;
             for (int i = 0; i < num_items; ++i) {
                 if (ind.chromosome[i]) items_in_bag.push_back(i);
             }
 
             // Ordena pelo "Pior Ratio Global" (Média dos ratios)
             // Itens com menor lucro/peso ficam no início para serem removidos
-            std::sort(items_in_bag.begin(), items_in_bag.end(), [&](int a, int b) {
+            sort(items_in_bag.begin(), items_in_bag.end(), [&](int a, int b) {
                 double ratio_a = 0, ratio_b = 0;
                 for(int o=0; o<NUM_OBJECTIVES; ++o) {
                     ratio_a += items[a].ratios[o];
@@ -159,7 +164,7 @@ public:
             Individual ind(num_items);
             for (int j = 0; j < num_items; ++j) {
                 // 50% de chance de pegar cada item inicialmente
-                if (std::uniform_real_distribution<>(0.0, 1.0)(rng) < 0.5) {
+                if (uniform_real_distribution<>(0.0, 1.0)(rng) < 0.5) {
                     ind.chromosome[j] = true;
                 }
             }
@@ -171,10 +176,10 @@ public:
     // 4. Seleção por Torneio Binário
     const Individual& tournament_selection(int objective_idx) {
         int k = 2; 
-        int best_idx = std::uniform_int_distribution<>(0, pop_size - 1)(rng);
+        int best_idx = uniform_int_distribution<>(0, pop_size - 1)(rng);
         
         for (int i = 1; i < k; ++i) {
-            int challenger = std::uniform_int_distribution<>(0, pop_size - 1)(rng);
+            int challenger = uniform_int_distribution<>(0, pop_size - 1)(rng);
             // Compara baseado APENAS no objetivo da sub-população atual
             if (population[challenger].fitness[objective_idx] > population[best_idx].fitness[objective_idx]) {
                 best_idx = challenger;
@@ -188,7 +193,7 @@ public:
         double total_fit = 0;
         for (const auto& ind : population) total_fit += ind.fitness[objective_idx];
 
-        double spin = std::uniform_real_distribution<>(0.0, total_fit)(rng);
+        double spin = uniform_real_distribution<>(0.0, total_fit)(rng);
         double current = 0;
         
         for (const auto& ind : population) {
@@ -199,9 +204,9 @@ public:
     }
 
     // 6. Crossover (Ponto Único)
-    std::pair<Individual, Individual> crossover(const Individual& p1, const Individual& p2) {
+    pair<Individual, Individual> crossover(const Individual& p1, const Individual& p2) {
         Individual c1(num_items), c2(num_items);
-        int point = std::uniform_int_distribution<>(1, num_items - 1)(rng);
+        int point = uniform_int_distribution<>(1, num_items - 1)(rng);
 
         for (int i = 0; i < num_items; ++i) {
             if (i < point) {
@@ -218,7 +223,7 @@ public:
     // 7. Mutação (Bit Flip)
     void mutate(Individual& ind) {
         for (int i = 0; i < num_items; ++i) {
-            if (std::uniform_real_distribution<>(0.0, 1.0)(rng) < mutation_rate) {
+            if (uniform_real_distribution<>(0.0, 1.0)(rng) < mutation_rate) {
                 ind.chromosome[i] = !ind.chromosome[i]; 
             }
         }
@@ -232,7 +237,7 @@ public:
         // Nota: Assumimos pop_size divisível por 3 (90, 93, etc.)
 
         for (int g = 0; g < generations; ++g) {
-            std::vector<Individual> new_pop;
+            vector<Individual> new_pop;
             
             // Loop para gerar nova população
             // Dividimos a geração em 3 partes, cada uma focando num objetivo (AMMT)
@@ -277,6 +282,7 @@ public:
         }
 
         // Retorna o melhor fitness do Objetivo 1 apenas como referência rápida
+        // O ideal é salvar a Fronteira de Pareto num ficheiro
         double best_val = 0;
         for (const auto& ind : population) {
             if (ind.fitness[0] > best_val) best_val = ind.fitness[0];
@@ -290,34 +296,34 @@ public:
 // ============================================================================
 int main() {
     // Ficheiro de saída
-    std::ofstream csv("resultados_cpp.csv");
+    ofstream csv("resultados_cpp.csv");
     csv << "Size,Selection,Mutation,Run,BestObjective1\n";
 
     // Configurações do Benchmark
-    std::vector<int> sizes = { 250, 500, 750, 1000 };
-    std::vector<int> selections = { 1, 2 }; // 1=Roleta, 2=Torneio
+    vector<int> sizes = { 250, 500, 750, 1000 };
+    vector<int> selections = { 1, 2 }; // 1=Roleta, 2=Torneio
     
     // Configurações de execução
     int total_runs = 30;    // Quantidade de execuções para média estatística
     int generations = 300;  // Gerações por execução
 
-    std::cout << "========================================" << std::endl;
-    std::cout << "   BENCHMARK C++ MOKP (AMMT)           " << std::endl;
-    std::cout << "========================================" << std::endl;
+    cout << "========================================" << endl;
+    cout << "   BENCHMARK C++ MOKP (AMMT)           " << endl;
+    cout << "========================================" << endl;
 
     for (int size : sizes) {
         for (int sel : selections) {
             
             // Taxa de mutação dinâmica (1 / N)
             double mutation_rate = 1.0 / (double)size;
-            std::string sel_name = (sel == 1) ? "Roleta" : "Torneio";
+            string sel_name = (sel == 1) ? "Roleta" : "Torneio";
 
             for (int run = 1; run <= total_runs; ++run) {
                 
                 // Exibe progresso no terminal
-                std::cout << "\r[Processando] Itens: " << std::setw(4) << size 
-                          << " | Metodo: " << std::setw(8) << sel_name 
-                          << " | Run: " << std::setw(2) << run << std::flush;
+                cout << "\r[Processando] Itens: " << setw(4) << size 
+                          << " | Metodo: " << setw(8) << sel_name 
+                          << " | Run: " << setw(2) << run << flush;
 
                 // Cria o Solver e roda
                 AMMTSolver solver(size, sel, mutation_rate, 0.05);
@@ -330,10 +336,13 @@ int main() {
         }
     }
 
-    std::cout << "\n\n========================================" << std::endl;
-    std::cout << " CONCLUIDO! Resultados em 'resultados_cpp.csv'" << std::endl;
-    std::cout << "========================================" << std::endl;
+    cout << "\n\n========================================" << endl;
+    cout << " CONCLUIDO! Resultados em 'resultados_cpp.csv'" << endl;
+    cout << "========================================" << endl;
+
+    
+    cout << "Pressione ENTER para sair..." << endl;
+    cin.get();
     
     return 0;
 }
-```
