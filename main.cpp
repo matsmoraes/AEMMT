@@ -7,7 +7,7 @@
 #include <iomanip>
 #include <cmath>
 #include <string>
-#include <chrono> // Importante para semente aleatória real
+#include <chrono>
 
 using namespace std;
 
@@ -49,7 +49,7 @@ struct Individual {
 };
 
 // ============================================================================
-// CLASSE DO SOLUCIONADOR
+// CLASSE DO SOLUCIONADOR (O CÉREBRO)
 // ============================================================================
 class AMMTSolver {
 private:
@@ -72,15 +72,13 @@ public:
         : num_items(items_n), selection_method(sel_method), 
           mutation_rate(mut_rate), elitism_rate(elit_rate) {
         
-        // Inicializa semente aleatória baseada no relógio do sistema
-        // Isso garante que cada execução seja diferente
+        // Inicializa semente aleatória baseada no relógio
         unsigned seed = chrono::system_clock::now().time_since_epoch().count();
         rng.seed(seed);
 
-        // Tamanho da população fixo (igual ao artigo)
+        // Tamanho da população fixo (92 conforme o artigo)
         pop_size = 92; 
         
-        // Gera os dados do problema assim que a classe é criada
         generate_instance();
     }
 
@@ -229,27 +227,23 @@ public:
         }
     }
 
-    // 8. Execução Principal (Evolução)
-    double run(int generations) {
+    // 8. Execução Principal (Evolução) - AGORA RETORNA A POPULAÇÃO FINAL COMPLETA
+    vector<Individual> run(int generations) {
         init_population();
         
         int subpop_size = pop_size / SUBPOP_COUNT; 
-        // Nota: Assumimos pop_size divisível por 3 (90, 93, etc.)
-
+        
         for (int g = 0; g < generations; ++g) {
             vector<Individual> new_pop;
             
-            // Loop para gerar nova população
-            // Dividimos a geração em 3 partes, cada uma focando num objetivo (AMMT)
+            // AMMT: Loop para cada objetivo (sub-população)
             for (int obj = 0; obj < NUM_OBJECTIVES; ++obj) {
-                // Preenchemos 1/3 da nova população focando neste objetivo
-                // Geramos 2 filhos por vez, então o loop roda metade das vezes necessárias
                 int pairs_needed = subpop_size / 2;
                 
                 for (int i = 0; i < pairs_needed; ++i) {
                     Individual p1, p2;
                     
-                    // Seleção
+                    // Seleção (Configurável no Construtor)
                     if (selection_method == 1) {
                         p1 = roulette_selection(obj);
                         p2 = roulette_selection(obj);
@@ -273,7 +267,7 @@ public:
                 }
             }
             
-            // Preenche o restante se a divisão não for exata (opcional)
+            // Preenche o restante para manter o tamanho fixo
             while(new_pop.size() < pop_size) {
                 new_pop.push_back(population[0]); 
             }
@@ -281,13 +275,8 @@ public:
             population = new_pop;
         }
 
-        // Retorna o melhor fitness do Objetivo 1 apenas como referência rápida
-        // O ideal é salvar a Fronteira de Pareto num ficheiro
-        double best_val = 0;
-        for (const auto& ind : population) {
-            if (ind.fitness[0] > best_val) best_val = ind.fitness[0];
-        }
-        return best_val;
+        // Retorna a população final inteira (para calcular HV de todos os pontos)
+        return population;
     }
 };
 
@@ -295,20 +284,21 @@ public:
 // RODANDO TUDO
 // ============================================================================
 int main() {
-    // Ficheiro de saída
-    ofstream csv("resultados_cpp.csv");
-    csv << "Size,Selection,Mutation,Run,BestObjective1\n";
+    // Arquivo de saída para o Python
+    ofstream csv("fronteira_pareto_completa.csv");
+    csv << "Size,Selection,Run,Obj1,Obj2,Obj3\n";
 
     // Configurações do Benchmark
     vector<int> sizes = { 250, 500, 750, 1000 };
-    vector<int> selections = { 1, 2 }; // 1=Roleta, 2=Torneio
     
-    // Configurações de execução
-    int total_runs = 30;    // Quantidade de execuções para média estatística
-    int generations = 300;  // Gerações por execução
+    // Lista de Métodos: 1=Roleta, 2=Torneio
+    vector<int> selections = { 1, 2 }; 
+    
+    int total_runs = 30;    // 30 Execuções para estatística
+    int generations = 300;  // 300 Gerações
 
     cout << "========================================" << endl;
-    cout << "   BENCHMARK C++ MOKP (AMMT)           " << endl;
+    cout << "   BENCHMARK C++: FRONTEIRA COMPLETA    " << endl;
     cout << "========================================" << endl;
 
     for (int size : sizes) {
@@ -320,27 +310,33 @@ int main() {
 
             for (int run = 1; run <= total_runs; ++run) {
                 
-                // Exibe progresso no terminal
-                cout << "\r[Processando] Itens: " << setw(4) << size 
+                // Feedback visual
+                cout << "\r[Proc] Size: " << setw(4) << size 
                           << " | Metodo: " << setw(8) << sel_name 
                           << " | Run: " << setw(2) << run << flush;
 
-                // Cria o Solver e roda
+                // Cria o Solver com os parâmetros atuais
                 AMMTSolver solver(size, sel, mutation_rate, 0.05);
-                double result = solver.run(generations);
+                
+                // Roda e obtém a população final (Fronteira)
+                vector<Individual> final_pop = solver.run(generations);
 
-                // Salva no CSV
-                csv << size << "," << sel_name << "," << mutation_rate << "," 
-                    << run << "," << result << "\n";
+                // Salva CADA ponto da fronteira no CSV
+                for (const auto& ind : final_pop) {
+                    csv << size << "," << sel_name << "," << run << "," 
+                        << ind.fitness[0] << "," 
+                        << ind.fitness[1] << "," 
+                        << ind.fitness[2] << "\n";
+                }
             }
         }
     }
 
     cout << "\n\n========================================" << endl;
-    cout << " CONCLUIDO! Resultados em 'resultados_cpp.csv'" << endl;
+    cout << " CONCLUIDO! Dados em 'fronteira_pareto_completa.csv'" << endl;
     cout << "========================================" << endl;
-
     
+    // Pausa para evitar fechar janela no Windows
     cout << "Pressione ENTER para sair..." << endl;
     cin.get();
     
