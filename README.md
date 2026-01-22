@@ -25,8 +25,6 @@ matsmoraes-aemmt/
 ├── plot_preliminar_cpp.py  # Preliminary analysis of selection methods
 └── resultados_cpp.csv      # Sample dataset from preliminary runs
 
-```
-
 ## 🛠️ Prerequisites & Requirements
 
 To replicate the experiments and run the visualization scripts, you need the following environment:
