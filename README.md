@@ -37,45 +37,33 @@ Instead of a single monolithic population, the AEMMT divides the total populatio
 
 The algorithm implements and compares two distinct selection pressures:
 
-Roulette Wheel Selection: Probabilistic selection proportional to fitness. Preserves diversity in early stages but may suffer from slow convergence in large-scale instances.
-
-Binary Tournament (k=2): Two individuals are randomly picked, and the fitter one is selected. This method proved superior for high-dimensional problems (1000 items) by applying consistent selective pressure.
+* **Roulette Wheel Selection:** Probabilistic selection proportional to fitness. Preserves diversity in early stages but may suffer from slow convergence in large-scale instances.
+* **Binary Tournament (k=2):** Two individuals are randomly picked, and the fitter one is selected. This method proved superior for high-dimensional problems (1000 items) by applying consistent selective pressure.
 
 ### Crossover: One-Point
 
-Type: One-Point Crossover.
-
-Mechanism: A random cut-point is selected in the chromosome vector. The parents swap segments to produce two offspring.
-
-Rate: 100% (Occurs for every selected pair).
-
-Why: Simple and effective for preserving building blocks in binary representations.
+* **Type:** One-Point Crossover.
+* **Mechanism:** A random cut-point is selected in the chromosome vector. The parents swap segments to produce two offspring.
+* **Rate:** 100% (Occurs for every selected pair).
+* **Why:** Simple and effective for preserving building blocks in binary representations.
 
 ### Mutation: Bit-Flip
 
-Type: Bit-Flip Mutation.
-
-Mechanism: Each gene (item inclusion bit) is independently inverted (0→1 or 1→0) with probability $P_m$.
-
-Rate: Dynamic ($P_m = 1 / N$, where $N$ is the number of items).
-
-Why: Ensures that, on average, exactly one gene is mutated per individual, regardless of problem size (250 vs 1000 items), maintaining stable exploration without disrupting good solutions.
+* **Type:** Bit-Flip Mutation.
+* **Mechanism:** Each gene (item inclusion bit) is independently inverted (0→1 or 1→0) with probability $P_m$.
+* **Rate:** Dynamic ($P_m = 1 / N$, where $N$ is the number of items).
+* **Why:** Ensures that, on average, exactly one gene is mutated per individual, regardless of problem size (250 vs 1000 items), maintaining stable exploration without disrupting good solutions.
 
 ### Constraint Handling: Greedy Repair
 
 A critical component of this solver is its ability to handle constraints efficiently. Most random solutions in MOKP are invalid (weight > capacity).
 
-Method: Greedy Repair Heuristic.
-
-Process:
-
-Identify if the knapsack is overweight.
-
-Calculate the Profit/Weight Ratio for all selected items.
-
-Iteratively remove items with the lowest efficiency ratio until the weight constraint is met.
-
-Benefit: This transforms infeasible solutions into feasible ones on the boundary of the feasible region, significantly accelerating convergence.
+* **Method:** Greedy Repair Heuristic.
+* **Process:**
+    1. Identify if the knapsack is overweight.
+    2. Calculate the **Profit/Weight Ratio** for all selected items.
+    3. Iteratively **remove** items with the *lowest* efficiency ratio until the weight constraint is met.
+* **Benefit:** This transforms infeasible solutions into feasible ones on the boundary of the feasible region, significantly accelerating convergence.
 
 ## Prerequisites & Requirements
 
