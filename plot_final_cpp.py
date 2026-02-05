@@ -5,16 +5,9 @@ from pymoo.indicators.hv import HV
 from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
 import sys
 import os
+import argparse
 
 INPUT_FILE = "fronteira_pareto_completa.csv"
-
-# Define qual método tentar plotar primeiro
-METODO_ALVO = 'Roleta' 
-
-# O nome do arquivo de saída será baseado no método alvo
-OUTPUT_IMAGE = f"comparacao_final_hv_{METODO_ALVO.lower()}.png"
-
-# ==============================================================================
 
 # --- DADOS DO ARTIGO (E-NSGA-III - Fig. 3) ---
 paper_data = {
@@ -26,7 +19,24 @@ paper_data = {
 
 # --- FUNÇÃO PRINCIPAL ---
 def main():
-    # 1. Verifica se o arquivo existe
+    # 1. Configura Argumentos da Linha de Comando
+    parser = argparse.ArgumentParser(description="Gera gráfico comparativo de Hypervolume.")
+    parser.add_argument(
+        '-m', '--metodo', 
+        type=str, 
+        choices=['Roleta', 'Torneio'], 
+        default='Roleta',
+        help="Escolha o método de seleção para plotar (Padrão: Roleta)"
+    )
+    args = parser.parse_args()
+    
+    METODO_ALVO = args.metodo
+    OUTPUT_IMAGE = f"comparacao_final_hv_{METODO_ALVO.lower()}.png"
+
+    print(f"\n> Configuração: Plotando método '{METODO_ALVO}'")
+    print(f"> Saída: '{OUTPUT_IMAGE}'")
+
+    # 2. Verifica se o arquivo existe
     if not os.path.exists(INPUT_FILE):
         print(f"ERRO: O arquivo '{INPUT_FILE}' não foi encontrado.")
         print("Certifique-se de ter rodado o benchmark C++ ('./benchmark_app') primeiro.")
@@ -51,7 +61,7 @@ def main():
 
     print(f"Calculando Hypervolume para {total_groups} execuções...")
 
-    # 2. Loop de processamento dos dados
+    # 3. Loop de processamento dos dados
     for name, group in grouped:
         size, selection, run = name
         count += 1
@@ -83,13 +93,14 @@ def main():
         if selection not in results[size]: results[size][selection] = []
         results[size][selection].append(hv)
 
-    # 3. Preparação para Plotagem
+    # 4. Preparação para Plotagem
     print("\nGerando Gráfico...")
     sizes_list = [250, 500, 750, 1000]
     ammt_vals = [] 
     paper_vals = []
     x_labels = []
     
+    # --- LÓGICA DE SELEÇÃO DO MÉTODO ---
     metodo_escolhido = METODO_ALVO
     
     # Verifica se existe dados do método escolhido, senão tenta fallback
@@ -105,6 +116,8 @@ def main():
         outro_metodo = 'Torneio' if metodo_escolhido == 'Roleta' else 'Roleta'
         print(f"-> Tentando usar '{outro_metodo}' como fallback.")
         metodo_escolhido = outro_metodo
+        
+        OUTPUT_IMAGE = f"comparacao_final_hv_{metodo_escolhido.lower()}.png"
 
     print(f"\n--- RESULTADOS FINAIS ({metodo_escolhido}) ---")
     
@@ -128,7 +141,7 @@ def main():
         
         print(f"[{s} Itens] AEMMT: {my_avg:.4f} (Min:{my_min:.4f} Max:{my_max:.4f})")
 
-    # 4. Construção do Gráfico
+    # 5. Construção do Gráfico
     group_gap = 1.5
     current_pos = 0
     plot_pos = []
@@ -177,14 +190,8 @@ def main():
     autolabel(rects2)
 
     plt.tight_layout()
-    
-    # Salva a imagem
-    nome_arquivo_final = OUTPUT_IMAGE
-    if metodo_escolhido != METODO_ALVO:
-        nome_arquivo_final = f"comparacao_final_hv_{metodo_escolhido.lower()}.png"
-        
-    plt.savefig(nome_arquivo_final)
-    print(f"\nSucesso! Gráfico salvo em: '{nome_arquivo_final}'")
+    plt.savefig(OUTPUT_IMAGE)
+    print(f"\nSucesso! Gráfico salvo em: '{OUTPUT_IMAGE}'")
 
 if __name__ == "__main__":
     main()
