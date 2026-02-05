@@ -137,14 +137,29 @@ python plot_convergence.py
 
 ### Step 3: Comparative Analysis (Hypervolume)
 
-Run the final comparison script to calculate metrics and compare against literature data.
+Run the final comparison script to calculate metrics and compare against literature data. You can choose which selection method to plot ('Roleta' or 'Torneio') using command-line arguments.
 
+**Default (Roleta):**
 ```bash
 python plot_final_cpp.py
 
 ```
 
 *Output: `comparacao_final_hv_roleta.png*`
+
+**Using Tournament (Torneio):**
+```bash
+python plot_final_cpp.py -m Torneio
+```
+
+*Output: `comparacao_final_hv_torneio.png`
+
+**View Help:**
+```bash
+python plot_final_cpp.py --help
+```
+
+Displays available options and usage instructions.
 
 ## Results
 
