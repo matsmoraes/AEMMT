@@ -169,7 +169,7 @@ def main():
     ax.set_title(f'Comparação: AEMMT ({metodo_escolhido}) vs NSGA-III\n(Métrica: Hypervolume Normalizado)')
     ax.set_xticks(plot_pos)
     ax.set_xticklabels(x_labels)
-    ax.legend(loc='upper left')
+    ax.legend(loc='upper right')
     
     ax.grid(axis='y', linestyle='--', alpha=0.5)
     
