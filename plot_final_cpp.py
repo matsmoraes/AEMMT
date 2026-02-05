@@ -6,9 +6,15 @@ from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
 import sys
 import os
 
-# --- CONFIGURAÇÕES ---
 INPUT_FILE = "fronteira_pareto_completa.csv"
-OUTPUT_IMAGE = "comparacao_final_hv_roleta.png" # Alterei o nome para não sobrescrever o anterior
+
+# Define qual método tentar plotar primeiro
+METODO_ALVO = 'Roleta' 
+
+# O nome do arquivo de saída será baseado no método alvo
+OUTPUT_IMAGE = f"comparacao_final_hv_{METODO_ALVO.lower()}.png"
+
+# ==============================================================================
 
 # --- DADOS DO ARTIGO (E-NSGA-III - Fig. 3) ---
 paper_data = {
@@ -20,8 +26,10 @@ paper_data = {
 
 # --- FUNÇÃO PRINCIPAL ---
 def main():
+    # 1. Verifica se o arquivo existe
     if not os.path.exists(INPUT_FILE):
         print(f"ERRO: O arquivo '{INPUT_FILE}' não foi encontrado.")
+        print("Certifique-se de ter rodado o benchmark C++ ('./benchmark_app') primeiro.")
         return
 
     print(f"Lendo '{INPUT_FILE}'...")
@@ -31,8 +39,9 @@ def main():
         print(f"Erro ao ler CSV: {e}")
         return
 
+    # Estruturas para cálculo do HV
     results = {}
-    ref_point = np.array([0.0, 0.0, 0.0])
+    ref_point = np.array([0.0, 0.0, 0.0]) # Ponto de referência (0,0,0) para dados normalizados/invertidos
     ind_hv = HV(ref_point=ref_point)
     nds = NonDominatedSorting()
 
@@ -42,6 +51,7 @@ def main():
 
     print(f"Calculando Hypervolume para {total_groups} execuções...")
 
+    # 2. Loop de processamento dos dados
     for name, group in grouped:
         size, selection, run = name
         count += 1
@@ -49,48 +59,57 @@ def main():
         if count % (total_groups // 10 + 1) == 0:
             print(f"Progresso: {int(count/total_groups*100)}%...")
 
+        # Extrai os objetivos
         points = group[['Obj1', 'Obj2', 'Obj3']].values
         
-        # Normalização
+        # --- NORMALIZAÇÃO E INVERSÃO ---
+        # Divide pelo máximo teórico (Size * 100) para ficar entre 0 e 1
         max_theoretical = size * 100.0
         norm_points = points / max_theoretical
+        
+        # Inverte para minimização (padrão pymoo): Melhores valores ficam próximos de -1
         neg_points = norm_points * -1
 
-        # Filtra Pareto
+        # --- FILTRO DE PARETO ---
         fronts = nds.do(neg_points)
         hv = 0.0
         if len(fronts) > 0:
+            # Pega apenas a primeira fronteira (Rank 0)
             pareto_front = neg_points[fronts[0]]
             hv = ind_hv(pareto_front)
 
+        # Armazena o resultado
         if size not in results: results[size] = {}
         if selection not in results[size]: results[size][selection] = []
         results[size][selection].append(hv)
 
-    # --- PLOTAGEM ---
+    # 3. Preparação para Plotagem
     print("\nGerando Gráfico...")
     sizes_list = [250, 500, 750, 1000]
     ammt_vals = [] 
     paper_vals = []
     x_labels = []
     
-    # --- MUDANÇA AQUI: FORÇANDO 'Roleta' ---
-    metodo_escolhido = 'Roleta' 
+    metodo_escolhido = METODO_ALVO
     
-    # Verifica se existe dados de Roleta, senão tenta Torneio como fallback
-    has_roleta = False
+    # Verifica se existe dados do método escolhido, senão tenta fallback
+    has_method = False
     for s in sizes_list:
-        if s in results and 'Roleta' in results[s]:
-            has_roleta = True
+        if s in results and metodo_escolhido in results[s]:
+            has_method = True
             break
     
-    if not has_roleta:
-        print("AVISO: Dados de 'Roleta' não encontrados no CSV. Usando 'Torneio'.")
-        metodo_escolhido = 'Torneio'
+    if not has_method:
+        print(f"AVISO: Dados de '{metodo_escolhido}' não encontrados no CSV.")
+        # Tenta encontrar o outro método (se Roleta falhar, tenta Torneio e vice-versa)
+        outro_metodo = 'Torneio' if metodo_escolhido == 'Roleta' else 'Roleta'
+        print(f"-> Tentando usar '{outro_metodo}' como fallback.")
+        metodo_escolhido = outro_metodo
 
     print(f"\n--- RESULTADOS FINAIS ({metodo_escolhido}) ---")
     
     for s in sizes_list:
+        # Dados do AEMMT
         if s in results and metodo_escolhido in results[s]:
             data = results[s][metodo_escolhido]
             my_min = np.min(data)
@@ -101,15 +120,15 @@ def main():
         
         ammt_vals.extend([my_min, my_max, my_avg])
         
-        # Dados do Paper
+        # Dados do Artigo (NSGA-III)
         p = paper_data[s]
         paper_vals.extend([p['min'], p['max'], p['avg']])
         
         x_labels.extend([f"{s}\nMin", f"{s}\nMax", f"{s}\nAvg"])
         
-        print(f"[{s} Itens] AMMT: {my_avg:.4f} (Min:{my_min:.4f} Max:{my_max:.4f})")
+        print(f"[{s} Itens] AEMMT: {my_avg:.4f} (Min:{my_min:.4f} Max:{my_max:.4f})")
 
-    # Plotagem
+    # 4. Construção do Gráfico
     group_gap = 1.5
     current_pos = 0
     plot_pos = []
@@ -125,22 +144,24 @@ def main():
 
     fig, ax = plt.subplots(figsize=(14, 7))
 
-    # Barra Verde (Seu Código - Roleta)
+    # Barra Verde (AMMT)
     rects1 = ax.bar(plot_pos - width/2, ammt_vals, width, 
-                    label=f'AMMT ({metodo_escolhido})', color='#4CAF50', edgecolor='black')
+                    label=f'AEMMT ({metodo_escolhido})', color='#4CAF50', edgecolor='black')
     
     # Barra Azul (NSGA-III Paper)
     rects2 = ax.bar(plot_pos + width/2, paper_vals, width, 
                     label='NSGA-III (Artigo)', color='#2196F3', edgecolor='black')
 
     ax.set_ylabel('Hypervolume (Normalizado)')
-    ax.set_title(f'Comparação: AMMT ({metodo_escolhido}) vs NSGA-III\n(Métrica: Hypervolume Normalizado)')
+    ax.set_title(f'Comparação: AEMMT ({metodo_escolhido}) vs NSGA-III\n(Métrica: Hypervolume Normalizado)')
     ax.set_xticks(plot_pos)
     ax.set_xticklabels(x_labels)
-    ax.legend()
+    ax.legend(loc='upper left')
+    
     ax.grid(axis='y', linestyle='--', alpha=0.5)
     
-    max_val = max(max(ammt_vals), max(paper_vals))
+    # Ajuste do limite Y
+    max_val = max(max(ammt_vals), max(paper_vals)) if ammt_vals else 0.1
     ax.set_ylim(0, max_val * 1.15)
 
     def autolabel(rects):
@@ -156,8 +177,14 @@ def main():
     autolabel(rects2)
 
     plt.tight_layout()
-    plt.savefig(OUTPUT_IMAGE)
-    print(f"\nSucesso! Gráfico salvo em: '{OUTPUT_IMAGE}'")
+    
+    # Salva a imagem
+    nome_arquivo_final = OUTPUT_IMAGE
+    if metodo_escolhido != METODO_ALVO:
+        nome_arquivo_final = f"comparacao_final_hv_{metodo_escolhido.lower()}.png"
+        
+    plt.savefig(nome_arquivo_final)
+    print(f"\nSucesso! Gráfico salvo em: '{nome_arquivo_final}'")
 
 if __name__ == "__main__":
     main()
