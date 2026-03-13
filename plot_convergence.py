@@ -18,7 +18,7 @@ def main():
     df = df.dropna(subset=["Selection"])
 
     if "Instance" not in df.columns:
-        print("AVISO: coluna 'Instance' nao encontrada - assumindo CSV no formato antigo.")
+        print("AVISO: coluna 'Instance' nao encontrada")
 
     sns.set_theme(style="whitegrid")
 
