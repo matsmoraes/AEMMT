@@ -86,7 +86,7 @@ def main():
         results.setdefault(size, {}).setdefault(selection, []).append(hv)
 
     # ---------------------------------------------------------------------------
-    # Verifica se o método escolhido existe, senão usa fallback
+    # Verifica se o método escolhido existe
     # ---------------------------------------------------------------------------
     sizes_list = [250, 500, 750, 1000]
 
