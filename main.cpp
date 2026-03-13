@@ -8,42 +8,91 @@
 #include <cmath>
 #include <string>
 #include <chrono>
+#include <sstream>
 
 using namespace std;
 
 // ============================================================================
 // CONFIGURAÇÕES GLOBAIS
 // ============================================================================
-const int NUM_OBJECTIVES = 3;      // Problema com 3 objetivos (Mochilas)
-const int SUBPOP_COUNT = 3;        // Uma sub-população dedicada para cada objetivo
-const double CAPACITY_RATIO = 0.5; // Capacidade da mochila é 50% do peso total dos itens
+const int NUM_OBJECTIVES = 3;
+const int SUBPOP_COUNT   = 3;
+const int ELITE_PER_SUBPOP = 1; // Indivíduos de elite preservados por sub-população
 
-// ============================================================================
-// ESTRUTURAS DE DADOS
-// ============================================================================
 
 struct Item {
     int id;
     double weight;
-    vector<double> profits; 
-    vector<double> ratios;  
+    double profits[NUM_OBJECTIVES];
+    double ratios[NUM_OBJECTIVES];
 };
 
 struct Individual {
-    vector<bool> chromosome; // Representação Binária: 1 = Item na mochila, 0 = Fora
-    vector<double> fitness;  // Vetor com o lucro de cada uma das 3 mochilas
+    vector<bool> chromosome;
+    double fitness[NUM_OBJECTIVES];
     double total_weight;
     bool valid;
 
-    Individual(int num_items = 0) {
-        if (num_items > 0) {
-            chromosome.resize(num_items, false);
-            fitness.resize(NUM_OBJECTIVES, 0.0);
-        }
-        total_weight = 0.0;
-        valid = false;
+    Individual() : total_weight(0.0), valid(false) {
+        fill(fitness, fitness + NUM_OBJECTIVES, 0.0);
+    }
+
+    Individual(int num_items) : total_weight(0.0), valid(false) {
+        chromosome.resize(num_items, false);
+        fill(fitness, fitness + NUM_OBJECTIVES, 0.0);
+    }
+
+    double total_fitness() const {
+        double s = 0;
+        for (int o = 0; o < NUM_OBJECTIVES; ++o) s += fitness[o];
+        return s;
     }
 };
+
+// ============================================================================
+// CARREGAMENTO DE INSTÂNCIA A PARTIR DE ARQUIVO
+// ============================================================================
+bool load_instance(const string& filepath,
+                   vector<Item>& items,
+                   double& capacity) {
+    ifstream f(filepath);
+    if (!f.is_open()) {
+        cerr << "ERRO: não foi possível abrir '" << filepath << "'\n";
+        return false;
+    }
+
+    items.clear();
+    string line;
+    getline(f, line); // cabeçalho
+
+    int id = 0;
+    while (getline(f, line)) {
+        if (line.empty()) continue;
+
+        // Verifica se é a linha de capacidade
+        if (line.substr(0, 8) == "CAPACITY") {
+            size_t pos = line.find(',');
+            capacity = stod(line.substr(pos + 1));
+            break;
+        }
+
+        // Lê item
+        Item it;
+        it.id = id++;
+        istringstream ss(line);
+        string tok;
+
+        getline(ss, tok, ','); it.weight = stod(tok);
+        for (int k = 0; k < NUM_OBJECTIVES; ++k) {
+            getline(ss, tok, ',');
+            it.profits[k] = stod(tok);
+            it.ratios[k]  = it.profits[k] / it.weight;
+        }
+        items.push_back(it);
+    }
+
+    return true;
+}
 
 // ============================================================================
 // CLASSE DO SOLUCIONADOR (AEMMT)
@@ -52,225 +101,216 @@ class AMMTSolver {
 private:
     int num_items;
     int pop_size;
-    int selection_method; 
+    int selection_method; // 1=Roleta, 2=Torneio
     double mutation_rate;
-    double elitism_rate;
-    double max_capacity;
 
-    vector<Item> items;
+    vector<Item>       items;
+    double             max_capacity;
     vector<Individual> population;
-    mt19937 rng;
+    mt19937            rng;
 
-    // Ficheiro para log de evolução
+    // Logging
     ofstream* log_evolution;
-    int current_run_id;
+    int    current_run_id;
     string current_sel_name;
-    int current_size;
+    int    current_size;
+    int    current_inst;
 
 public:
-    AMMTSolver(int items_n, int sel_method, double mut_rate, double elit_rate) 
-        : num_items(items_n), selection_method(sel_method), 
-          mutation_rate(mut_rate), elitism_rate(elit_rate) {
-        
+    AMMTSolver(const vector<Item>& inst_items,
+               double inst_capacity,
+               int sel_method,
+               double mut_rate)
+        : items(inst_items),
+          max_capacity(inst_capacity),
+          num_items((int)inst_items.size()),
+          selection_method(sel_method),
+          mutation_rate(mut_rate)
+    {
         unsigned seed = chrono::system_clock::now().time_since_epoch().count();
         rng.seed(seed);
-            
-        // 90 = 3 sub-populações de 30 indivíduos cada.
-        // Isso evita "sobras" no loop de geração e mantém paridade com os 92 do artigo.
-        pop_size = 90; 
-        
-        log_evolution = nullptr;
-        generate_instance();
+
+        // 90 = 3 sub-populações de 30 indivíduos
+        pop_size = 90;
+
+        log_evolution    = nullptr;
+        current_run_id   = 0;
+        current_sel_name = "";
+        current_size     = 0;
+        current_inst     = 0;
     }
 
-    void set_logging(ofstream* log_file, int size, string sel, int run) {
-        log_evolution = log_file;
-        current_size = size;
+    void set_logging(ofstream* log_file, int size, int inst,
+                     const string& sel, int run) {
+        log_evolution    = log_file;
+        current_size     = size;
+        current_inst     = inst;
         current_sel_name = sel;
-        current_run_id = run;
+        current_run_id   = run;
     }
 
-    // Gera instância aleatória (Pesos e Lucros entre 10 e 100)
-    void generate_instance() {
-        items.clear();
-        double total_weight_all = 0;
-        for (int i = 0; i < num_items; ++i) {
-            Item it;
-            it.id = i;
-            it.weight = uniform_real_distribution<>(10.0, 100.0)(rng);
-            total_weight_all += it.weight;
-            for (int o = 0; o < NUM_OBJECTIVES; ++o) {
-                double profit = uniform_real_distribution<>(10.0, 100.0)(rng);
-                it.profits.push_back(profit);
-                // Pré-calcula a razão (Lucro / Peso) para usar no Greedy Repair
-                it.ratios.push_back(profit / it.weight);
-            }
-            items.push_back(it);
-        }
-        max_capacity = total_weight_all * CAPACITY_RATIO;
-    }
-
-    
-    // Operador de Reparo (Greedy Repair)
+    // -----------------------------------------------------------------
+    // Reparo Guloso
+    // -----------------------------------------------------------------
     void evaluate_and_repair(Individual& ind) {
         ind.total_weight = 0;
-        fill(ind.fitness.begin(), ind.fitness.end(), 0.0);
+        fill(ind.fitness, ind.fitness + NUM_OBJECTIVES, 0.0);
 
-        // 1. Calcula peso e fitness inicial
         for (int i = 0; i < num_items; ++i) {
             if (ind.chromosome[i]) {
                 ind.total_weight += items[i].weight;
-                for (int o = 0; o < NUM_OBJECTIVES; ++o) {
+                for (int o = 0; o < NUM_OBJECTIVES; ++o)
                     ind.fitness[o] += items[i].profits[o];
-                }
             }
         }
 
-        // 2. Se excedeu a capacidade, aplica o Reparo Guloso
         if (ind.total_weight > max_capacity) {
-            vector<int> items_in_bag;
-            for (int i = 0; i < num_items; ++i) {
-                if (ind.chromosome[i]) items_in_bag.push_back(i);
-            }
-            
-            // Ordena itens presentes pelo "Pior Ratio" (Menor lucro por peso)
-            sort(items_in_bag.begin(), items_in_bag.end(), [&](int a, int b) {
-                double ratio_a = 0, ratio_b = 0;
-                // Usa a soma dos ratios dos 3 objetivos para decidir quem sai
-                for(int o=0; o<NUM_OBJECTIVES; ++o) {
-                    ratio_a += items[a].ratios[o];
-                    ratio_b += items[b].ratios[o];
+            vector<int> in_bag;
+            for (int i = 0; i < num_items; ++i)
+                if (ind.chromosome[i]) in_bag.push_back(i);
+
+            // Ordena pelo menor ratio agregado (candidatos a remoção)
+            sort(in_bag.begin(), in_bag.end(), [&](int a, int b) {
+                double ra = 0, rb = 0;
+                for (int o = 0; o < NUM_OBJECTIVES; ++o) {
+                    ra += items[a].ratios[o];
+                    rb += items[b].ratios[o];
                 }
-                return ratio_a < ratio_b; // Crescente: menores ratios ficam no início
+                return ra < rb;
             });
 
-            // Remove itens até caber na mochila
-            for (int id : items_in_bag) {
+            for (int id : in_bag) {
                 if (ind.total_weight <= max_capacity) break;
-                
-                ind.chromosome[id] = false; // Remove item
-                ind.total_weight -= items[id].weight;
-                for (int o = 0; o < NUM_OBJECTIVES; ++o) {
+                ind.chromosome[id]  = false;
+                ind.total_weight   -= items[id].weight;
+                for (int o = 0; o < NUM_OBJECTIVES; ++o)
                     ind.fitness[o] -= items[id].profits[o];
-                }
             }
         }
         ind.valid = true;
     }
 
+    // -----------------------------------------------------------------
+    // Inicialização
+    // -----------------------------------------------------------------
     void init_population() {
         population.clear();
+        population.reserve(pop_size);
         for (int i = 0; i < pop_size; ++i) {
             Individual ind(num_items);
-            for (int j = 0; j < num_items; ++j) {
-                if (uniform_real_distribution<>(0.0, 1.0)(rng) < 0.5) {
-                    ind.chromosome[j] = true;
-                }
-            }
+            for (int j = 0; j < num_items; ++j)
+                ind.chromosome[j] =
+                    uniform_real_distribution<>(0.0, 1.0)(rng) < 0.5;
             evaluate_and_repair(ind);
-            population.push_back(ind);
+            population.push_back(move(ind));
         }
     }
 
-    // Operador de seleção 1: Torneio Binário (Tournament Selection)
-    const Individual& tournament_selection(int objective_idx) {
-        int k = 2; 
-        int best_idx = uniform_int_distribution<>(0, pop_size - 1)(rng);
-        
-        for (int i = 1; i < k; ++i) {
-            int challenger = uniform_int_distribution<>(0, pop_size - 1)(rng);
-            // Compara fitness APENAS no objetivo da sub-população atual
-            if (population[challenger].fitness[objective_idx] > population[best_idx].fitness[objective_idx]) {
-                best_idx = challenger;
-            }
-        }
-        return population[best_idx];
+    // -----------------------------------------------------------------
+    // Seleção: Torneio Binário
+    // -----------------------------------------------------------------
+    const Individual& tournament_selection(int obj) {
+        int best = uniform_int_distribution<>(0, pop_size - 1)(rng);
+        int chal = uniform_int_distribution<>(0, pop_size - 1)(rng);
+        return population[population[chal].fitness[obj] >
+                          population[best].fitness[obj] ? chal : best];
     }
 
-    // Operador de seleção 2: Roleta (Roulette Wheel Selection)
-    const Individual& roulette_selection(int objective_idx) {
-        double total_fit = 0;
-        for (const auto& ind : population) total_fit += ind.fitness[objective_idx];
-
-        double spin = uniform_real_distribution<>(0.0, total_fit)(rng);
-        double current = 0;
-        
+    // -----------------------------------------------------------------
+    // Seleção: Roleta
+    // -----------------------------------------------------------------
+    const Individual& roulette_selection(int obj) {
+        double total = 0;
+        for (const auto& ind : population) total += ind.fitness[obj];
+        double spin = uniform_real_distribution<>(0.0, total)(rng);
+        double cur  = 0;
         for (const auto& ind : population) {
-            current += ind.fitness[objective_idx];
-            if (current >= spin) return ind;
+            cur += ind.fitness[obj];
+            if (cur >= spin) return ind;
         }
-        return population.back(); 
+        return population.back();
     }
 
-
-    // Operador de Cruzamento: Ponto Único (One-Point Crossover)
-    pair<Individual, Individual> crossover(const Individual& p1, const Individual& p2) {
+    // -----------------------------------------------------------------
+    // Cruzamento: Ponto Único
+    // -----------------------------------------------------------------
+    pair<Individual, Individual> crossover(const Individual& p1,
+                                           const Individual& p2) {
         Individual c1(num_items), c2(num_items);
         int point = uniform_int_distribution<>(1, num_items - 1)(rng);
-
         for (int i = 0; i < num_items; ++i) {
-            if (i < point) {
-                c1.chromosome[i] = p1.chromosome[i];
-                c2.chromosome[i] = p2.chromosome[i];
-            } else {
-                c1.chromosome[i] = p2.chromosome[i];
-                c2.chromosome[i] = p1.chromosome[i];
-            }
+            c1.chromosome[i] = (i < point) ? p1.chromosome[i] : p2.chromosome[i];
+            c2.chromosome[i] = (i < point) ? p2.chromosome[i] : p1.chromosome[i];
         }
         return {c1, c2};
     }
 
-    // Operador de Mutação: Bit-Flip (Inversão de Bit)
+    // -----------------------------------------------------------------
+    // Mutação: Bit-Flip
+    // -----------------------------------------------------------------
     void mutate(Individual& ind) {
-        for (int i = 0; i < num_items; ++i) {
-            if (uniform_real_distribution<>(0.0, 1.0)(rng) < mutation_rate) {
-                ind.chromosome[i] = !ind.chromosome[i]; // Inverte: 0->1 ou 1->0
-            }
-        }
+        for (int i = 0; i < num_items; ++i)
+            if (uniform_real_distribution<>(0.0, 1.0)(rng) < mutation_rate)
+                ind.chromosome[i] = !ind.chromosome[i];
     }
 
-    // --- EXECUÇÃO PRINCIPAL (EVOLUÇÃO) ---
+    // -----------------------------------------------------------------
+    // Elitismo: extrai os ELITE_PER_SUBPOP melhores por objetivo
+    // -----------------------------------------------------------------
+    vector<Individual> extract_elite() {
+        vector<Individual> elite;
+        elite.reserve(SUBPOP_COUNT * ELITE_PER_SUBPOP);
+
+        for (int obj = 0; obj < SUBPOP_COUNT; ++obj) {
+            // Cria índices ordenados pelo objetivo 'obj' (decrescente)
+            vector<int> idx(pop_size);
+            iota(idx.begin(), idx.end(), 0);
+            sort(idx.begin(), idx.end(), [&](int a, int b) {
+                return population[a].fitness[obj] > population[b].fitness[obj];
+            });
+            for (int k = 0; k < ELITE_PER_SUBPOP; ++k)
+                elite.push_back(population[idx[k]]);
+        }
+        return elite;
+    }
+
+    // -----------------------------------------------------------------
+    // LOOP PRINCIPAL
+    // -----------------------------------------------------------------
     vector<Individual> run(int generations) {
         init_population();
-        int subpop_size = pop_size / SUBPOP_COUNT; 
+        int subpop_size = pop_size / SUBPOP_COUNT; // 30
 
         for (int g = 0; g < generations; ++g) {
-            
-            // --- LOG DE EVOLUÇÃO (Fitness Total das 3 Mochilas) ---
+
+            // --- Log de evolução ---
             if (log_evolution) {
-                double best_total_fit = 0;
-                double sum_total_fit_pop = 0;
-
-                for(const auto& ind : population) {
-                    // Calcula a SOMA dos 3 objetivos para este indivíduo
-                    double current_ind_total = 0;
-                    for(double f : ind.fitness) current_ind_total += f;
-
-                    // Verifica se é o melhor da população (em termos de soma)
-                    if (current_ind_total > best_total_fit) best_total_fit = current_ind_total;
-                    
-                    sum_total_fit_pop += current_ind_total;
+                double best_total = 0, sum_total = 0;
+                for (const auto& ind : population) {
+                    double t = ind.total_fitness();
+                    if (t > best_total) best_total = t;
+                    sum_total += t;
                 }
-                
-                double avg_total_fit = sum_total_fit_pop / pop_size;
-                
-                *log_evolution << current_size << "," << current_sel_name << "," 
-                               << current_run_id << "," << g << "," 
-                               << best_total_fit << "," << avg_total_fit << "\n";
+                *log_evolution
+                    << current_size    << ","
+                    << current_inst    << ","
+                    << current_sel_name << ","
+                    << current_run_id  << ","
+                    << g               << ","
+                    << best_total      << ","
+                    << (sum_total / pop_size) << "\n";
             }
-            // --------------------------------------------------
 
+            vector<Individual> elite = extract_elite();
+
+            // --- Geração de filhos ---
             vector<Individual> new_pop;
-            
-            // ESTRATÉGIA AEMMT: Sub-populações focadas
-            // O loop itera sobre os objetivos (0, 1, 2).
-            // A cada iteração, gera filhos otimizados para AQUELE objetivo específico.
+            new_pop.reserve(pop_size);
+
             for (int obj = 0; obj < NUM_OBJECTIVES; ++obj) {
-                int pairs_needed = subpop_size / 2;
-                for (int i = 0; i < pairs_needed; ++i) {
+                int pairs = subpop_size / 2;
+                for (int i = 0; i < pairs; ++i) {
                     Individual p1, p2;
-                    
-                    // Seleção de Pais (Focada no objetivo atual 'obj')
                     if (selection_method == 1) {
                         p1 = roulette_selection(obj);
                         p2 = roulette_selection(obj);
@@ -279,76 +319,109 @@ public:
                         p2 = tournament_selection(obj);
                     }
 
-                    // Cruzamento
-                    auto children = crossover(p1, p2);
+                    auto [c1, c2] = crossover(p1, p2);
 
-                    // Mutação e Reparo
-                    mutate(children.first);
-                    evaluate_and_repair(children.first);
-                    
-                    mutate(children.second);
-                    evaluate_and_repair(children.second);
+                    mutate(c1); evaluate_and_repair(c1);
+                    mutate(c2); evaluate_and_repair(c2);
 
-                    new_pop.push_back(children.first);
-                    new_pop.push_back(children.second);
+                    new_pop.push_back(move(c1));
+                    new_pop.push_back(move(c2));
                 }
             }
-            // Preenche o restante da população se a divisão não for exata
-            while(new_pop.size() < pop_size) new_pop.push_back(population[0]); 
-            
-            population = new_pop;
+
+            // --- Reintroduz elite, substituindo os piores filhos ---
+            // Ordena new_pop pelo total_fitness (crescente = piores primeiro)
+            sort(new_pop.begin(), new_pop.end(), [](const Individual& a,
+                                                    const Individual& b) {
+                return a.total_fitness() < b.total_fitness();
+            });
+            for (int e = 0; e < (int)elite.size() && e < (int)new_pop.size(); ++e)
+                new_pop[e] = elite[e]; // substitui os piores
+
+            population = move(new_pop);
         }
+
         return population;
     }
 };
 
+
+string instance_path(int size, int inst_id) {
+    ostringstream ss;
+    ss << "instances/mokp_" << size
+       << "_inst" << setw(2) << setfill('0') << inst_id << ".csv";
+    return ss.str();
+}
+
 // ============================================================================
-// MAIN - LOOP DE BENCHMARK
+// MAIN
 // ============================================================================
 int main() {
     ofstream csv_pareto("fronteira_pareto_completa.csv");
-    csv_pareto << "Size,Selection,Run,Obj1,Obj2,Obj3\n";
+    csv_pareto << "Size,Instance,Selection,Run,Obj1,Obj2,Obj3\n";
 
     ofstream csv_evo("evolucao_fitness.csv");
-    csv_evo << "Size,Selection,Run,Generation,BestFit,AvgFit\n";
+    csv_evo << "Size,Instance,Selection,Run,Generation,BestFit,AvgFit\n";
 
-    vector<int> sizes = { 250, 500, 750, 1000 };
-    vector<int> selections = { 1, 2 }; // 1=Roleta, 2=Torneio
-    
-    int total_runs = 30;    
-    int generations = 300; 
+    const vector<int>    sizes      = {250, 500, 750, 1000};
+    const vector<int>    selections = {1, 2}; // 1=Roleta, 2=Torneio
+    const int            INSTANCES  = 20;
+    const int            RUNS       = 30;
+    const int            GENERATIONS = 300;
 
-    cout << "=== BENCHMARK C++: FIT TOTAL & FRONTEIRA ===" << endl;
+    cout << "=== BENCHMARK AEMMT (instâncias fixas + elitismo) ===\n\n";
+
+    int total_jobs = (int)sizes.size() * (int)selections.size() * INSTANCES * RUNS;
+    int done = 0;
 
     for (int size : sizes) {
         for (int sel : selections) {
-            
-            // Taxa de Mutação Dinâmica (1/N)
-            double mutation_rate = 1.0 / (double)size;
             string sel_name = (sel == 1) ? "Roleta" : "Torneio";
+            double mutation_rate = 1.0 / (double)size;
 
-            for (int run = 1; run <= total_runs; ++run) {
-                cout << "\r[Proc] Size:" << setw(4) << size 
-                          << " | Met:" << setw(8) << sel_name 
-                          << " | Run:" << setw(2) << run << flush;
+            for (int inst = 1; inst <= INSTANCES; ++inst) {
+                // Carrega instância fixa
+                vector<Item> items;
+                double capacity = 0;
+                string fpath = instance_path(size, inst);
 
-                AMMTSolver solver(size, sel, mutation_rate, 0.05);
-                solver.set_logging(&csv_evo, size, sel_name, run);
-                
-                vector<Individual> final_pop = solver.run(generations);
+                if (!load_instance(fpath, items, capacity)) {
+                    cerr << "Pulando instância ausente: " << fpath << "\n";
+                    continue;
+                }
 
-                for (const auto& ind : final_pop) {
-                    csv_pareto << size << "," << sel_name << "," << run << "," 
-                        << ind.fitness[0] << "," 
-                        << ind.fitness[1] << "," 
-                        << ind.fitness[2] << "\n";
+                for (int run = 1; run <= RUNS; ++run) {
+                    ++done;
+                    cout << "\r[" << setw(5) << done << "/" << total_jobs << "]"
+                         << " Size:" << setw(4) << size
+                         << " Inst:" << setw(2) << inst
+                         << " Sel:"  << setw(8) << sel_name
+                         << " Run:"  << setw(2) << run
+                         << flush;
+
+                    AMMTSolver solver(items, capacity, sel, mutation_rate);
+                    solver.set_logging(&csv_evo, size, inst, sel_name, run);
+
+                    vector<Individual> final_pop = solver.run(GENERATIONS);
+
+                    for (const auto& ind : final_pop) {
+                        csv_pareto << size    << ","
+                                   << inst    << ","
+                                   << sel_name << ","
+                                   << run     << ","
+                                   << ind.fitness[0] << ","
+                                   << ind.fitness[1] << ","
+                                   << ind.fitness[2] << "\n";
+                    }
                 }
             }
         }
     }
 
-    cout << "\n\nConcluido! Pressione ENTER para sair..." << endl;
+    cout << "\n\nConcluído! CSVs gerados:\n"
+         << "  fronteira_pareto_completa.csv\n"
+         << "  evolucao_fitness.csv\n\n"
+         << "Pressione ENTER para sair...";
     cin.get();
-    
     return 0;
 }
