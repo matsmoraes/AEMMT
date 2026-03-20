@@ -172,10 +172,9 @@ It is worth noting that NSGA-III relies on nondominated sorting as an implicit e
 
 ## Authors
 
-**Matheus de Moraes Neves** and **Christiane Regina Soares Brasil**
+**Matheus de Moraes Neves** and **Christiane Regina Soares Brasil (Scientific Initiation advisor)**
 Universidade Federal de Uberlandia (UFU)
 
 - [LinkedIn](https://www.linkedin.com/in/matheus-neves-864aa01a8/)
-- [GitHub](https://github.com/matsmoraes/AEMMT)
 
 *Developed as part of a Scientific Initiation research project on Combinatorial Optimization and Evolutionary Algorithms.*
