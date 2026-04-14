@@ -22,16 +22,32 @@ The algorithm is compared against NSGA-III results from the scientific literatur
 
 ```
 matsmoraes-aemmt/
-├── main.cpp                     # AEMMT solver (death penalty constraint handling)
-├── generate_instances.cpp       # Fixed instance generator (20 instances x 4 sizes)
-├── plot_convergence.py          # Convergence visualization (fitness over generations)
-├── plot_final_cpp.py            # Hypervolume comparison: AEMMT vs NSGA-III
-├── plot_reparo_vs_semreparo.py  # Hypervolume comparison: with repair vs without repair
-└── instances/                   # 80 pre-generated fixed CSV instances
-    ├── mokp_250_inst01.csv
-    ├── ...
-    └── mokp_1000_inst20.csv
+├── README.md
+├── .gitignore
+│
+├── src/                             # C++ source code
+│   ├── main.cpp                     # AEMMT solver (death penalty constraint handling)
+│   └── generate_instances.cpp       # Fixed instance generator (20 instances x 4 sizes)
+│
+├── scripts/                         # Python analysis and visualization
+│   ├── plot_convergence.py          # Convergence visualization (fitness over generations)
+│   ├── plot_final_cpp.py            # Hypervolume comparison: AEMMT vs NSGA-III
+│   └── plot_reparo_vs_semreparo.py  # Hypervolume comparison: with repair vs without repair
+│
+├── instances/                       # 80 pre-generated fixed CSV instances
+│   ├── mokp_250_inst01.csv
+│   ├── ...
+│   └── mokp_1000_inst20.csv
+│
+├── figures/                         # Output images from the analysis scripts
+│   ├── analise_convergencia.png
+│   └── comparacao_final_hv_todos.png
+│
+└── paper/                           # LaTeX source of the research article
+    └── vou_colocar_ainda.pdf
 ```
+
+The binaries `benchmark_app` and `gen_instances` are compiled from `src/` via `make` and are not versioned. The `instances/` folder is versioned because the fixed instances are part of the experimental protocol, i.e., re-generating them from scratch would change the seeds and break reproducibility.
 
 ## Algorithm Design
 
@@ -43,7 +59,7 @@ The total population of 90 individuals is split into 3 sub-populations of 30, ea
 
 Any solution whose total weight exceeds the knapsack capacity $c$ receives a fitness of zero across all objectives and is marked as infeasible. Formally, the evaluated fitness vector $F(x)$ is defined as:
 
-$$F_i(x) = \begin{cases} f_i(x) & \text{if } \displaystyle\sum_{j=1}^{m} w_j \cdot x_j \leq c ,\\ 0 & \text{otherwise} \end{cases}$$
+$$F_i(x) = \begin{cases} f_i(x) & \text{if } \displaystyle\sum_{j=1}^{m} w_j \cdot x_j \leq c \\ 0 & \text{otherwise} \end{cases}$$
 
 This is the same strategy implicitly used by NSGA-III in the reference study, which makes the comparison between the two algorithms direct and fair.
 
@@ -107,53 +123,78 @@ pip install pandas matplotlib seaborn numpy pymoo
 
 ## How to Run
 
+The `Makefile` at the root compiles both binaries in one step:
+
+```bash
+make
+```
+
+Or individually:
+
+```bash
+make benchmark      # compiles src/main.cpp -> benchmark_app
+make gen_instances  # compiles src/generate_instances.cpp -> gen_instances
+make clean          # removes compiled binaries
+```
+
 **Step 1: Generate the fixed instances**
 
 ```bash
-g++ generate_instances.cpp -o gen_instances -O2 -std=c++17
 ./gen_instances
 ```
 
-This creates the `instances/` folder with all 80 CSV files. You only need to run this once.
+This creates the `instances/` folder with all 80 CSV files. You only need to run this once. The folder is already present in the repository, so this step is only needed if you want to regenerate from scratch.
 
 **Step 2: Run the benchmark**
 
 ```bash
-g++ main.cpp -o benchmark_app -O3 -std=c++17
 ./benchmark_app
 ```
 
-This generates two output files: `fronteira_pareto_completa.csv` with the Pareto front solutions per run, and `evolucao_fitness.csv` with the fitness evolution per generation.
+This generates two output files at the project root: `fronteira_pareto_completa.csv` with the Pareto front solutions per run, and `evolucao_fitness.csv` with the fitness evolution per generation.
 
 **Step 3: Plot convergence**
 
 ```bash
-python plot_convergence.py
+python scripts/plot_convergence.py
 ```
 
-Output: `analise_convergencia.png`
+Output: `figures/analise_convergencia.png`
 
 **Step 4: Hypervolume comparison (AEMMT vs NSGA-III)**
 
 ```bash
-python plot_final_cpp.py
+python scripts/plot_final_cpp.py
 ```
 
-Output: `comparacao_final_hv_todos.png`
+Output: `figures/comparacao_final_hv_todos.png`
 
 This plots AEMMT Roleta, AEMMT Torneio, and NSGA-III side by side for all four problem sizes.
+
+**Step 5: With repair vs without repair (optional)**
+
+If you want to measure the impact of the Greedy Repair heuristic compared to the Death Penalty, compile and run each version, rename the output CSV, then run the comparison script:
+
+```bash
+mv fronteira_pareto_completa.csv fronteira_com_reparo.csv
+./benchmark_app
+mv fronteira_pareto_completa.csv fronteira_sem_reparo.csv
+python scripts/plot_reparo_vs_semreparo.py
+```
+
+Output: `figures/comparacao_reparo_vs_semreparo.png`
 
 ## Results
 
 ### Convergence
 
-![Convergence Analysis](analise_convergencia.png)
+![Convergence Analysis](figures/analise_convergencia.png)
 
 Both selection methods show a steady increase in best total fitness over 300 generations. Each point in the chart is the average over 20 instances and 30 runs, i.e., 600 samples per point. Tournament selection converges faster and reaches higher fitness values, with the gap becoming more visible at larger problem sizes.
 
 ### Hypervolume: AEMMT vs NSGA-III
 
-![Hypervolume Comparison](comparacao_final_hv_todos.png)
+![Hypervolume Comparison](figures/comparacao_final_hv_todos.png)
 
 AEMMT with Tournament selection outperforms NSGA-III in minimum and average Hypervolume across all problem sizes. The advantage grows with problem complexity: at 1000 items, Tournament achieves an average HV of 0.056 against NSGA-III's 0.014. Beyond the raw numbers, AEMMT also shows much lower variance between minimum and maximum values, i.e., the algorithm behaves consistently across different instances rather than occasionally finding a good solution by chance.
 
@@ -172,9 +213,10 @@ It is worth noting that NSGA-III relies on nondominated sorting as an implicit e
 
 ## Authors
 
-**Matheus de Moraes Neves** and **Christiane Regina Soares Brasil (Scientific Initiation advisor)**
+**Matheus de Moraes Neves** and **Christiane Regina Soares Brasil** (Scientific Initiation advisor)
 Universidade Federal de Uberlandia (UFU)
 
 - [LinkedIn](https://www.linkedin.com/in/matheus-neves-864aa01a8/)
+- [GitHub](https://github.com/matsmoraes/AEMMT)
 
 *Developed as part of a Scientific Initiation research project on Combinatorial Optimization and Evolutionary Algorithms.*
