@@ -1,4 +1,3 @@
 benchmark_app
 gen_instances
-*.csv
 !instances/*.csv
