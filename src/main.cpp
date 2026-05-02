@@ -7,7 +7,6 @@
 #include <iomanip>
 #include <cmath>
 #include <string>
-#include <chrono>
 #include <sstream>
 
 using namespace std;
@@ -24,16 +23,16 @@ const int ELITE_PER_SUBPOP = 1;
 // ============================================================================
 
 struct Item {
-    int    id;
-    double weight;
-    double profits[NUM_OBJECTIVES];
+    int id;
+    int weight;
+    int profits[NUM_OBJECTIVES];
 };
 
 struct Individual {
     vector<bool> chromosome;
     double       fitness[NUM_OBJECTIVES];
     double       total_weight;
-    bool         feasible; // true se nao viola restricao de capacidade
+    bool         feasible;
 
     Individual() : total_weight(0.0), feasible(false) {
         fill(fitness, fitness + NUM_OBJECTIVES, 0.0);
@@ -56,7 +55,7 @@ struct Individual {
 // ============================================================================
 // CARREGAMENTO DE INSTANCIA
 // ============================================================================
-bool load_instance(const string& path, vector<Item>& items, double& capacity) {
+bool load_instance(const string& path, vector<Item>& items, int& capacity) {
     ifstream f(path);
     if (!f.is_open()) { cerr << "ERRO: nao foi possivel abrir '" << path << "'\n"; return false; }
 
@@ -68,15 +67,15 @@ bool load_instance(const string& path, vector<Item>& items, double& capacity) {
     while (getline(f, line)) {
         if (line.empty()) continue;
         if (line.substr(0, 8) == "CAPACITY") {
-            capacity = stod(line.substr(line.find(',') + 1));
+            capacity = stoi(line.substr(line.find(',') + 1));
             break;
         }
         Item it; it.id = id++;
         istringstream ss(line); string tok;
-        getline(ss, tok, ','); it.weight = stod(tok);
+        getline(ss, tok, ','); it.weight = stoi(tok);
         for (int k = 0; k < NUM_OBJECTIVES; ++k) {
             getline(ss, tok, ',');
-            it.profits[k] = stod(tok);
+            it.profits[k] = stoi(tok);
         }
         items.push_back(it);
     }
@@ -84,7 +83,8 @@ bool load_instance(const string& path, vector<Item>& items, double& capacity) {
 }
 
 // ============================================================================
-// AEMMT
+// AEMMT — Death Penalty
+// Solucoes inviaveis recebem fitness = 0 em todos os objetivos
 // ============================================================================
 class AMMTSolver {
 private:
@@ -93,7 +93,7 @@ private:
     int            selection_method;
     double         mutation_rate;
     vector<Item>   items;
-    double         max_capacity;
+    int            max_capacity;
     vector<Individual> population;
     mt19937        rng;
 
@@ -102,13 +102,13 @@ private:
     string current_sel_name;
 
 public:
-    AMMTSolver(const vector<Item>& inst_items, double capacity,
-               int sel_method, double mut_rate)
+    AMMTSolver(const vector<Item>& inst_items, int capacity,
+               int sel_method, double mut_rate, unsigned long seed)
         : items(inst_items), max_capacity(capacity),
           num_items((int)inst_items.size()),
           selection_method(sel_method), mutation_rate(mut_rate)
     {
-        rng.seed(chrono::system_clock::now().time_since_epoch().count());
+        rng.seed(seed); // semente deterministica passada pelo chamador
         pop_size = 90;
         log_evolution = nullptr;
         current_run_id = current_size = current_inst = 0;
@@ -120,6 +120,7 @@ public:
     }
 
     // ------------------------------------------------------------------
+    // Avaliacao: Death Penalty
     // Solucao inviavel recebe fitness = 0 em todos os objetivos
     // ------------------------------------------------------------------
     void evaluate(Individual& ind) {
@@ -135,7 +136,6 @@ public:
         }
 
         if (ind.total_weight > max_capacity) {
-            // marca como inviavel
             fill(ind.fitness, ind.fitness + NUM_OBJECTIVES, 0.0);
             ind.feasible = false;
         } else {
@@ -149,10 +149,11 @@ public:
     void init_population() {
         population.clear();
         population.reserve(pop_size);
+        uniform_real_distribution<> prob(0.0, 1.0);
         for (int i = 0; i < pop_size; ++i) {
             Individual ind(num_items);
             for (int j = 0; j < num_items; ++j)
-                ind.chromosome[j] = uniform_real_distribution<>(0.0,1.0)(rng) < 0.5;
+                ind.chromosome[j] = prob(rng) < 0.5;
             evaluate(ind);
             population.push_back(move(ind));
         }
@@ -160,11 +161,12 @@ public:
 
     // ------------------------------------------------------------------
     // Selecao: Torneio Binario
-    // Inviavel perde sempre (fitness=0)
+    // Inviavel perde sempre (fitness = 0)
     // ------------------------------------------------------------------
     const Individual& tournament_selection(int obj) {
-        int best = uniform_int_distribution<>(0, pop_size-1)(rng);
-        int chal = uniform_int_distribution<>(0, pop_size-1)(rng);
+        uniform_int_distribution<> idx(0, pop_size - 1);
+        int best = idx(rng);
+        int chal = idx(rng);
         return population[population[chal].fitness[obj] >
                           population[best].fitness[obj] ? chal : best];
     }
@@ -199,11 +201,12 @@ public:
     }
 
     // ------------------------------------------------------------------
-    // Mutacao: Bit-Flip
+    // Mutacao: Bit-Flip com taxa = 1/num_items
     // ------------------------------------------------------------------
     void mutate(Individual& ind) {
+        uniform_real_distribution<> prob(0.0, 1.0);
         for (int i = 0; i < num_items; ++i)
-            if (uniform_real_distribution<>(0.0,1.0)(rng) < mutation_rate)
+            if (prob(rng) < mutation_rate)
                 ind.chromosome[i] = !ind.chromosome[i];
     }
 
@@ -216,12 +219,11 @@ public:
         for (int obj = 0; obj < SUBPOP_COUNT; ++obj) {
             vector<int> idx(pop_size);
             iota(idx.begin(), idx.end(), 0);
-            // Ordena decrescente por objetivo — inviavel (fitness=0) cai naturalmente
             sort(idx.begin(), idx.end(), [&](int a, int b) {
                 return population[a].fitness[obj] > population[b].fitness[obj];
             });
             for (int k = 0; k < ELITE_PER_SUBPOP; ++k)
-                if (population[idx[k]].feasible)   // preserva viaveis
+                if (population[idx[k]].feasible)
                     elite.push_back(population[idx[k]]);
         }
         return elite;
@@ -278,7 +280,7 @@ public:
                 }
             }
 
-            // Reintroduz elite substituindo os piores (inviavel ou menor fitness)
+            // Reintroduz elite substituindo os piores
             sort(new_pop.begin(), new_pop.end(), [](const Individual& a, const Individual& b) {
                 return a.total_fitness() < b.total_fitness();
             });
@@ -291,7 +293,9 @@ public:
     }
 };
 
-// Retorna o caminho do CSV de uma instancia
+// ============================================================================
+// UTILITARIO: caminho da instancia
+// ============================================================================
 string instance_path(int size, int inst_id) {
     ostringstream ss;
     ss << "instances/mokp_" << size
@@ -315,19 +319,19 @@ int main() {
     const int RUNS       = 30;
     const int GENERATIONS = 300;
 
-    cout << "=== BENCHMARK AEMMT SEM REPARO (Death Penalty) ===\n\n";
+    cout << "=== BENCHMARK AEMMT (Death Penalty) ===\n\n";
 
     int total = (int)sizes.size() * (int)selections.size() * INSTANCES * RUNS;
     int done  = 0;
 
     for (int size : sizes) {
         for (int sel : selections) {
-            string sel_name    = (sel == 1) ? "Roleta" : "Torneio";
-            double mut_rate    = 1.0 / (double)size;
+            string sel_name = (sel == 1) ? "Roleta" : "Torneio";
+            double mut_rate = 1.0 / (double)size;
 
             for (int inst = 1; inst <= INSTANCES; ++inst) {
                 vector<Item> items;
-                double capacity = 0;
+                int capacity = 0;
                 string fpath = instance_path(size, inst);
 
                 if (!load_instance(fpath, items, capacity)) {
@@ -343,7 +347,14 @@ int main() {
                          << " Sel:"  << setw(8) << sel_name
                          << " Run:"  << setw(2) << run << flush;
 
-                    AMMTSolver solver(items, capacity, sel, mut_rate);
+                    // Semente deterministica, garante reprodutibilidade dos 30 runs
+                    unsigned long seed = (unsigned long)size * 100000000UL
+                                       + (unsigned long)sel  * 10000000UL
+                                       + (unsigned long)inst * 100000UL
+                                       + (unsigned long)run  * 1000UL
+                                       + 42UL;
+
+                    AMMTSolver solver(items, capacity, sel, mut_rate, seed);
                     solver.set_logging(&csv_evo, size, inst, sel_name, run);
 
                     vector<Individual> final_pop = solver.run(GENERATIONS);
@@ -367,8 +378,6 @@ int main() {
 
     cout << "\n\nConcluido! CSVs gerados:\n"
          << "  fronteira_pareto_completa.csv\n"
-         << "  evolucao_fitness.csv\n\n"
-         << "Pressione ENTER para sair...";
-    cin.get();
+         << "  evolucao_fitness.csv\n";
     return 0;
 }
