@@ -39,12 +39,10 @@ matsmoraes-aemmt/
 │   ├── ...
 │   └── mokp_1000_inst20.csv
 │
-├── figures/                         # Output images from the analysis scripts
-│   ├── analise_convergencia.png
-│   └── comparacao_final_hv_todos.png
-│
-└── paper/                           # LaTeX source of the research article
-    └── vou_colocar_ainda.pdf
+└──  figures/                         # Output images from the analysis scripts
+    ├── analise_convergencia.png
+    └── comparacao_final_hv_todos.png
+
 ```
 
 The binaries `benchmark_app` and `gen_instances` are compiled from `src/` via `make` and are not versioned. The `instances/` folder is versioned because the fixed instances are part of the experimental protocol, i.e., re-generating them from scratch would change the seeds and break reproducibility.
@@ -143,7 +141,9 @@ make clean          # removes compiled binaries
 ./gen_instances
 ```
 
-This creates the `instances/` folder with all 80 CSV files. You only need to run this once. The folder is already present in the repository, so this step is only needed if you want to regenerate from scratch.
+This creates the `instances/` folder with all 80 CSV files (20 instances × 4 sizes).
+You only need to run this once. The folder is already present in the repository,
+so this step is only needed if you want to regenerate from scratch.
 
 **Step 2: Run the benchmark**
 
@@ -151,9 +151,19 @@ This creates the `instances/` folder with all 80 CSV files. You only need to run
 ./benchmark_app
 ```
 
-This generates two output files at the project root: `fronteira_pareto_completa.csv` with the Pareto front solutions per run, and `evolucao_fitness.csv` with the fitness evolution per generation.
+This generates two output files at the project root:
+- `fronteira_pareto_completa.csv` — Pareto front solutions per run
+- `evolucao_fitness.csv` — fitness evolution per generation
 
-**Step 3: Plot convergence**
+> This step is computationally intensive: 4 sizes × 2 selection methods × 20 instances × 30 runs = 4,800 executions with 300 generations each. Expect a runtime of several minutes depending on your machine.
+
+**Step 3: Install Python dependencies**
+
+```bash
+pip install pandas matplotlib seaborn numpy pymoo
+```
+
+**Step 4: Plot convergence**
 
 ```bash
 python scripts/plot_convergence.py
@@ -161,7 +171,7 @@ python scripts/plot_convergence.py
 
 Output: `figures/analise_convergencia.png`
 
-**Step 4: Hypervolume comparison (AEMMT vs NSGA-III)**
+**Step 5: Hypervolume comparison (AEMMT vs NSGA-III)**
 
 ```bash
 python scripts/plot_final_cpp.py
@@ -169,20 +179,7 @@ python scripts/plot_final_cpp.py
 
 Output: `figures/comparacao_final_hv_todos.png`
 
-This plots AEMMT Roleta, AEMMT Torneio, and NSGA-III side by side for all four problem sizes.
-
-**Step 5: With repair vs without repair (optional)**
-
-If you want to measure the impact of the Greedy Repair heuristic compared to the Death Penalty, compile and run each version, rename the output CSV, then run the comparison script:
-
-```bash
-mv fronteira_pareto_completa.csv fronteira_com_reparo.csv
-./benchmark_app
-mv fronteira_pareto_completa.csv fronteira_sem_reparo.csv
-python scripts/plot_reparo_vs_semreparo.py
-```
-
-Output: `figures/comparacao_reparo_vs_semreparo.png`
+This plots AEMMT Roulette, AEMMT Tournament, and NSGA-III side by side for all four problem sizes. Hypervolume is normalized by the maximum observed value per problem size, following the methodology of Wangsom & Lavangnananda (2019).
 
 ## Results
 
