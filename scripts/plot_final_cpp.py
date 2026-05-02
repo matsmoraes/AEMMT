@@ -24,24 +24,11 @@ COLORS = {
     "NSGA-III": "#EE7900",  
 }
 
-# ---------------------------------------------------------------------------
-# Calcula o maximo observado por objetivo para cada tamanho.
-# Usado como denominador na normalizacao, replica o que o Wangsom faz:
-# normaliza pelo melhor valor real encontrado.
-# ---------------------------------------------------------------------------
-def compute_max_per_size(df):
-    maxima = {}
-    for size, group in df.groupby("Size"):
-        maxima[size] = group[["Obj1", "Obj2", "Obj3"]].values.max(axis=0)
-    return maxima
-
-def calc_hv(df, maxima):
+def calc_hv(df):
     """Calcula HV por (Size, Instance, Selection, Run) e retorna dict[size][selection] = [hv,...]"""
     if "Instance" not in df.columns:
         df["Instance"] = 1
 
-    # Ponto de referencia = [0,0,0]
-    # pois todos os pontos ficam em [-1, 0] e sao dominados por [0,0,0]
     ref_point = np.array([0.0, 0.0, 0.0])
     ind_hv    = HV(ref_point=ref_point)
     nds       = NonDominatedSorting()
@@ -57,16 +44,12 @@ def calc_hv(df, maxima):
         if count % max(1, total // 20) == 0:
             print(f"  {int(count / total * 100):3d}%  ({count}/{total})")
 
-        points   = group[["Obj1", "Obj2", "Obj3"]].values
-        max_vals = maxima[size]
-
-        # Normaliza pelo maximo real observado naquele tamanho -> [0, 1]
-        # Depois converte maximizacao em minimizacao -> [-1, 0]
-        neg_points = -(points / max_vals)
+        points          = group[["Obj1", "Obj2", "Obj3"]].values
+        neg_points      = (points / (size * 100.0)) * -1.0
 
         hv = 0.0
         fronts = nds.do(neg_points)
-        if len(fronts) > 0 and len(fronts[0]) > 0:
+        if len(fronts) > 0:
             hv = ind_hv(neg_points[fronts[0]])
 
         results.setdefault(size, {}).setdefault(selection, []).append(hv)
@@ -89,10 +72,7 @@ def main():
     df = pd.read_csv(INPUT_FILE)
     df = df.dropna(subset=["Selection"])
 
-    # Calcula maximos reais por tamanho antes do HV
-    maxima  = compute_max_per_size(df)
-    results = calc_hv(df, maxima)
-
+    results    = calc_hv(df)
     sizes_list = [250, 500, 750, 1000]
     metodos    = ["Roleta", "Torneio"]
     stats      = ["Min", "Max", "Avg"]
@@ -171,10 +151,12 @@ def main():
                     fontsize=7.5, rotation=90, fontweight="bold"
                 )
 
+    # Separadores entre grupos de tamanho
     for i in range(1, len(sizes_list)):
         sep_x = plot_pos[i * 3 - 1] + (group_gap + 1) / 2
         ax.axvline(sep_x, color="gray", linestyle=":", linewidth=0.8, alpha=0.5)
 
+    # Rotulos de tamanho centralizados abaixo dos grupos
     for i, s in enumerate(sizes_list):
         center = np.mean(plot_pos[i*3 : i*3+3])
         ax.text(center, -ax.get_ylim()[1] * 0.07, f"{s} itens",
@@ -195,6 +177,7 @@ def main():
 
     plt.tight_layout()
     plt.savefig(OUTPUT_IMAGE, dpi=300)
+    print(f"\nSucesso! Grafico salvo em: '{OUTPUT_IMAGE}'")
 
 if __name__ == "__main__":
     main()
