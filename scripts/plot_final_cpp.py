@@ -177,7 +177,7 @@ def main():
 
     plt.tight_layout()
     plt.savefig(OUTPUT_IMAGE, dpi=300)
-    print(f"\nSucesso! Grafico salvo em: '{OUTPUT_IMAGE}'")
+    print(f"\nGrafico salvo em: '{OUTPUT_IMAGE}'")
 
 if __name__ == "__main__":
     main()
